@@ -29,24 +29,18 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public AuthResponse register(RegisterRequest request) {
 
-        // 🔴 Validar email duplicado
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new DuplicateResourceException("Email ya registrado");
+            throw new RuntimeException("Email ya registrado");
         }
 
-        // 🔐 Encriptar contraseña
-        String encodedPassword = passwordEncoder.encode(request.getPassword());
-
-        // 👤 Crear usuario
         User user = User.builder()
                 .email(request.getEmail())
-                .password(encodedPassword)
+                .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.ROLE_USER)
                 .build();
 
         userRepository.save(user);
 
-        // ⚠️ Por ahora sin JWT
         return new AuthResponse(null, user.getRole().name());
     }
 
@@ -56,12 +50,12 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Credenciales inválidas"));
 
-        // 🔐 Validar contraseña
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Credenciales inválidas");
         }
 
         String token = jwtService.generateToken(user.getEmail());
+
         return new AuthResponse(token, user.getRole().name());
     }
 }
