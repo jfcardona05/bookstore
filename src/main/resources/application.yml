@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:bookstoredb
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+server:
+  servlet:
+    context-path: /api/v1
