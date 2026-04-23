@@ -1,12 +1,27 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:bookstoredb
-
+    url: jdbc:h2:mem:bookstoredb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
+    open-in-view: false
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
 
 server:
   servlet:
     context-path: /api/v1
+
+app:
+  jwt:
+    secret: mysecretkeymysecretkeymysecretkey12345678
+    expiration-ms: 3600000
