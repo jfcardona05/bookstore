@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -122,6 +123,154 @@ class BookstoreApplicationTests {
                 .andExpect(jsonPath("$.data[0].customerEmail").value(userEmail));
     }
 
+    @Test
+    void roleRestrictionsAndQueryEndpointsWork() throws Exception {
+        String adminToken = loginAndExtractToken("admin@bookstore.com", "Admin123*");
+
+        Long authorId = createResource("""
+                {
+                  "name": "Julio Verne",
+                  "biography": "Autor de aventuras"
+                }
+                """, "/authors", adminToken);
+
+        Long categoryId = createResource("""
+                {
+                  "name": "Adventure",
+                  "description": "Adventure books"
+                }
+                """, "/categories", adminToken);
+
+        Long bookId = createResource("""
+                {
+                  "title": "Viaje al centro de la tierra",
+                  "isbn": "ISBN-VERNE-001",
+                  "description": "Classic adventure",
+                  "price": 39.90,
+                  "stock": 8,
+                  "authorId": %d,
+                  "categoryId": %d
+                }
+                """.formatted(authorId, categoryId), "/books", adminToken);
+
+        mockMvc.perform(get("/books")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2));
+
+        mockMvc.perform(get("/books")
+                        .param("title", "centro")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].title").value("Viaje al centro de la tierra"));
+
+        mockMvc.perform(get("/authors/999")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+
+        String userEmail = "reader2@test.com";
+        registerUser("Reader Two", userEmail, "Reader1234");
+        String userToken = loginAndExtractToken(userEmail, "Reader1234");
+
+        mockMvc.perform(post("/books")
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Forbidden book",
+                                  "isbn": "ISBN-FORBIDDEN-001",
+                                  "description": "Should fail",
+                                  "price": 10.0,
+                                  "stock": 1,
+                                  "authorId": %d,
+                                  "categoryId": %d
+                                }
+                                """.formatted(authorId, categoryId)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/orders")
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/books/" + bookId)
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(bookId));
+    }
+
+    @Test
+    void duplicateAndValidationErrorsAreHandled() throws Exception {
+        String adminToken = loginAndExtractToken("admin@bookstore.com", "Admin123*");
+
+        registerUser("Duplicate User", "duplicate@test.com", "Password123");
+
+        mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "Duplicate User",
+                                  "email": "duplicate@test.com",
+                                  "password": "Password123"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("El correo ya est\u00e1 registrado"));
+
+        mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "",
+                                  "email": "badmail",
+                                  "password": "123"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        Long authorId = createResource("""
+                {
+                  "name": "Isaac Asimov",
+                  "biography": "Sci-fi"
+                }
+                """, "/authors", adminToken);
+
+        Long categoryId = createResource("""
+                {
+                  "name": "Sci-Fi",
+                  "description": "Science fiction"
+                }
+                """, "/categories", adminToken);
+
+        createResource("""
+                {
+                  "title": "Foundation",
+                  "isbn": "ISBN-FOUNDATION-001",
+                  "description": "Classic sci-fi",
+                  "price": 50.00,
+                  "stock": 4,
+                  "authorId": %d,
+                  "categoryId": %d
+                }
+                """.formatted(authorId, categoryId), "/books", adminToken);
+
+        mockMvc.perform(post("/books")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Foundation 2",
+                                  "isbn": "ISBN-FOUNDATION-001",
+                                  "description": "Duplicated isbn",
+                                  "price": 60.00,
+                                  "stock": 5,
+                                  "authorId": %d,
+                                  "categoryId": %d
+                                }
+                                """.formatted(authorId, categoryId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Ya existe un libro con ese ISBN"));
+    }
+
     private String loginAndExtractToken(String email, String password) throws Exception {
         MvcResult result = mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -136,6 +285,19 @@ class BookstoreApplicationTests {
 
         JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
         return root.path("data").path("token").asText();
+    }
+
+    private void registerUser(String fullName, String email, String password) throws Exception {
+        mockMvc.perform(post("/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "%s",
+                                  "email": "%s",
+                                  "password": "%s"
+                                }
+                                """.formatted(fullName, email, password)))
+                .andExpect(status().isCreated());
     }
 
     private Long createResource(String payload, String path, String token) throws Exception {
