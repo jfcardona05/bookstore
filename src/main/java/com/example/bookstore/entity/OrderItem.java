@@ -18,42 +18,29 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "books")
+@Table(name = "order_items")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Book {
+public class OrderItem {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 180)
-    private String title;
-
-    @Column(nullable = false, unique = true, length = 30)
-    private String isbn;
-
-    @Column(length = 1000)
-    private String description;
+    @Column(nullable = false)
+    private Integer quantity;
 
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal price;
-
-    @Column(nullable = false)
-    private Integer stock;
+    private BigDecimal unitPrice;
 
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "author_id")
-    private Author author;
+    @JoinColumn(name = "book_id")
+    private Book book;
 
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "category_id")
-    private Category category;
-
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "created_by")
-    private User createdBy;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "order_id")
+    private CustomerOrder order;
 }

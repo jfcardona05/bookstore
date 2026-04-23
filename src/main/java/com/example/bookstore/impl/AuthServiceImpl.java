@@ -9,6 +9,7 @@ import com.example.bookstore.exception.custom.DuplicateResourceException;
 import com.example.bookstore.repository.UserRepository;
 import com.example.bookstore.security.JwtService;
 import com.example.bookstore.service.AuthService;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -19,8 +20,9 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
-    public AuthServiceImpl(JwtService jwtService, UserRepository userRepository,
-                           PasswordEncoder passwordEncoder) {
+    public AuthServiceImpl(UserRepository userRepository,
+                           PasswordEncoder passwordEncoder,
+                           JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -28,34 +30,39 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public AuthResponse register(RegisterRequest request) {
-
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email ya registrado");
+            throw new DuplicateResourceException("El correo ya est\u00e1 registrado");
         }
 
         User user = User.builder()
+                .fullName(request.getFullName())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.ROLE_USER)
                 .build();
 
         userRepository.save(user);
-
-        return new AuthResponse(null, user.getRole().name());
+        return toResponse(user);
     }
 
     @Override
     public AuthResponse login(LoginRequest request) {
-
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Credenciales inválidas"));
+                .orElseThrow(() -> new BadCredentialsException("Credenciales inv\u00e1lidas"));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Credenciales inválidas");
+            throw new BadCredentialsException("Credenciales inv\u00e1lidas");
         }
 
-        String token = jwtService.generateToken(user.getEmail());
+        return toResponse(user);
+    }
 
-        return new AuthResponse(token, user.getRole().name());
+    private AuthResponse toResponse(User user) {
+        return new AuthResponse(
+                jwtService.generateToken(user),
+                user.getFullName(),
+                user.getEmail(),
+                user.getRole().name()
+        );
     }
 }
